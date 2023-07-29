@@ -37,6 +37,8 @@ def collate_fn(data,feature_extractor,tokenizer,pad_to_multiple_of,IsTrain):
                               return_attention_mask=False)['input_features']
     if IsTrain:
         txt = tokenizer.batch_encode_plus(txt,padding=True,return_attention_mask=True,pad_to_multiple_of=pad_to_multiple_of,return_tensors='np')
+        if tokenizer.bos_token_id:
+            print('need to remove bos_token')
         input_ids,attention_mask = txt['input_ids'], txt['attention_mask']
         # pad/eos is based on tokenizer but not consistent with model
         pad_idx = np.where(input_ids==tokenizer.pad_token_id)
