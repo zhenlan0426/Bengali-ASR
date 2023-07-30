@@ -29,8 +29,10 @@ def get_len(audio_list,pad_to_multiple_of):
     max_len = max(a.shape[0] for a in audio_list)
     return (max_len//160//pad_to_multiple_of+1)*pad_to_multiple_of*160
 
-def collate_fn(data,feature_extractor,tokenizer,pad_to_multiple_of,IsTrain):
+
+def collate_fn(data,feature_extractor,tokenizer,pad_to_multiple_of,batch_size,IsTrain,IsTPU):
     # data: is a list of tuples with [(audio:1d Array,txt:List of text),...]
+    psplit = lambda x: x.reshape(8,batch_size//8,*x.shape[1:])
     audio,txt = zip(*data)
     audio = feature_extractor(audio,sampling_rate=16000,do_normalize=True,\
                               max_length=get_len(audio,pad_to_multiple_of),return_tensors='np',\
@@ -47,6 +49,8 @@ def collate_fn(data,feature_extractor,tokenizer,pad_to_multiple_of,IsTrain):
         input_ids[eos_idx] = eos_token_id
         input_ids = np.concatenate([np.broadcast_to(bos_ids,(input_ids.shape[0],4)),input_ids],1)
         attention_mask = np.concatenate([np.broadcast_to(mask_ids,(input_ids.shape[0],4)),attention_mask],1)
-        return audio, input_ids,attention_mask # mask (n,l-4) -4 bc it does not have the special token at the begining
+        if IsTPU:
+            audio,input_ids,attention_mask = psplit(audio),psplit(input_ids),psplit(attention_mask)
+        return audio,input_ids,attention_mask
     else:
         return audio,txt
