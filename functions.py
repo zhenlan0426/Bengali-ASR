@@ -13,6 +13,24 @@ mask_ids = np.ones((1,4),dtype=np.int64)
 # data sr and required sr for model
 orig_sr=32000; target_sr=16000
 
+class Inference(Dataset):
+    def __init__(self, speech_path):
+        self.speech_path = speech_path # List of str
+    def __len__(self):
+        return len(self.speech_path)
+    def __getitem__(self,idx):
+        audio = librosa.load(self.speech_path[idx])[0]
+        audio = librosa.resample(audio, orig_sr=orig_sr, target_sr=target_sr)
+        return audio
+    
+def collate_fn_infer(data,feature_extractor,pad_to_multiple_of):
+    # data: is a list of tuples with [(audio:1d Array,txt:List of text),...]
+    audio = zip(*data)
+    audio = feature_extractor(audio,sampling_rate=16000,do_normalize=True,\
+                              max_length=get_len(audio,pad_to_multiple_of),return_tensors='np',\
+                              return_attention_mask=False)['input_features']
+    return audio
+        
 class AudioDataset(Dataset):
     def __init__(self, text,speech_path,augmentation=None):
         self.text = text
