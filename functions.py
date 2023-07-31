@@ -10,16 +10,21 @@ import jax.numpy as jnp
 pad_token_id = eos_token_id = 50257
 bos_ids = np.array([[50258, 50302, 50359, 50363]]) # '<|startoftranscript|><|bn|><|transcribe|><|notimestamps|>
 mask_ids = np.ones((1,4),dtype=np.int64)
+# data sr and required sr for model
+orig_sr=32000; target_sr=16000
 
 class AudioDataset(Dataset):
-    def __init__(self, text,speech_path):
+    def __init__(self, text,speech_path,augmentation=None):
         self.text = text
         self.speech_path = speech_path
+        self.augmentation = augmentation
     def __len__(self):
         return self.text.shape[0]
     def __getitem__(self,idx):
         audio = librosa.load(self.speech_path+self.text.id.iloc[idx]+'.mp3')[0]
-        audio = librosa.resample(audio, orig_sr=32000, target_sr=16000)
+        if self.augmentation:
+            audio = self.augmentation(audio,orig_sr)
+        audio = librosa.resample(audio, orig_sr=orig_sr, target_sr=target_sr)
         txt = self.text.sentence.iloc[idx][:-1] # remove "|"
         return audio,txt
     
