@@ -1,0 +1,8 @@
+gcloud alpha compute tpus tpu-vm ssh node-v2-8 --zone us-central1-f
+gcloud alpha compute tpus tpu-vm ssh node-3 --zone europe-west4-a
+tmux
+. ~/.venv311/bin/activate
+jupyter lab --ip=0.0.0.0 --port=8888 --no-browser
+# control B and then D
+kill -9 -1
+"For the use case you mentioned, it's probably more convenient to use tmux. It's a terminal multiplexer, so you can disconnect from the machine but keep your terminals open. To start it, run 'tmux'. You know you’re in tmux if you see a green status bar at the bottom. Start your ML training program like you normally would, then press ctrl+b, then d. You should see something like [detached (from session 0)]. Now you can disconnect from the machine, and your program will keep running. If you want to check back on its progress, log back in and type 'tmux attach'. Now you can detach again, close the terminal or run another command. It's very convenient."
