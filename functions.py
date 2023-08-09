@@ -11,41 +11,40 @@ pad_token_id = eos_token_id = 50257
 bos_ids = np.array([[50258, 50302, 50359, 50363]]) # '<|startoftranscript|><|bn|><|transcribe|><|notimestamps|>
 mask_ids = np.ones((1,4),dtype=np.int64)
 # data sr and required sr for model
-orig_sr=32000; target_sr=16000
 
-class Inference(Dataset):
-    def __init__(self, speech_path):
-        self.speech_path = speech_path # List of str
-    def __len__(self):
-        return len(self.speech_path)
-    def __getitem__(self,idx):
-        audio = librosa.load(self.speech_path[idx])[0]
-        audio = librosa.resample(audio, orig_sr=orig_sr, target_sr=target_sr)
-        return audio
-    
-def collate_fn_infer(data,feature_extractor,pad_to_multiple_of):
-    # data: is a list of tuples with [(audio:1d Array,txt:List of text),...]
-    audio = zip(*data)
-    audio = feature_extractor(audio,sampling_rate=16000,do_normalize=True,\
-                              max_length=get_len(audio,pad_to_multiple_of),return_tensors='np',\
-                              return_attention_mask=False)['input_features']
-    return audio
-        
 class AudioDataset(Dataset):
-    def __init__(self, text,speech_path,augmentation=None):
+    def __init__(self, text,speech_path,get_map_fn,augmentation=None,orig_sr=32000, target_sr=16000):
         self.text = text
         self.speech_path = speech_path
         self.augmentation = augmentation
+        self.orig_sr = orig_sr
+        self.target_sr = target_sr
+        self.get_map_fn = get_map_fn
     def __len__(self):
         return self.text.shape[0]
     def __getitem__(self,idx):
-        audio = librosa.load(self.speech_path+self.text.id.iloc[idx]+'.mp3')[0]
+        audio = librosa.load(self.speech_path+self.get_map_fn(self.text.iloc[idx]))[0]
         if self.augmentation:
-            audio = self.augmentation(audio,orig_sr)
-        audio = librosa.resample(audio, orig_sr=orig_sr, target_sr=target_sr)
-        txt = self.text.sentence.iloc[idx][:-1] # remove "|"
+            audio = self.augmentation(audio,self.orig_sr)
+        if self.target_sr != self.orig_sr:
+            audio = librosa.resample(audio, orig_sr=self.orig_sr, target_sr=self.target_sr)
+        txt = self.text.sentence.iloc[idx]#[:-1] # remove "|"
         return audio,txt
-    
+
+class Add2Data(Dataset):
+    def __init__(self, data1,data2):
+        self.data1 = data1
+        self.data2 = data2
+        self.lens = [len(data1),len(data2)]
+    def __len__(self):
+        return sum(self.lens)
+    def __getitem__(self,idx):
+        l1 = self.lens[0]
+        if idx < l1:
+            return self.data1[idx]
+        else:
+            return self.data2[idx-l1]
+
 def get_len(audio_list,pad_to_multiple_of):
     # pad_to_multiple_of is applied in feature_extractor before FFT. But we want the output of FFT to be a multiple of.
     # 160 is waveform length -> specgram length
