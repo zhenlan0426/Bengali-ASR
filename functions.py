@@ -1,12 +1,15 @@
 from transformers.models.whisper.tokenization_whisper import WhisperTokenizer
 from transformers import WhisperFeatureExtractor
 import librosa
+from pedalboard import Reverb
 import pandas as pd
 import numpy as np
 from torch.utils.data import Dataset, DataLoader
 import jax
 import jax.numpy as jnp
+import torch
 # this is specific to whisper model
+device = 'cuda'
 pad_token_id = eos_token_id = 50257
 bos_ids = np.array([[50258, 50302, 50359, 50363]]) # '<|startoftranscript|><|bn|><|transcribe|><|notimestamps|>
 mask_ids = np.ones((1,4),dtype=np.int64)
@@ -25,7 +28,8 @@ class AudioDataset(Dataset):
     def __getitem__(self,idx):
         audio = librosa.load(self.speech_path+self.get_map_fn(self.text.iloc[idx]))[0]
         if self.augmentation:
-            audio = self.augmentation(audio,self.orig_sr)
+            rev = Reverb(room_size=np.random.rand()*0.5)
+            audio = self.augmentation(rev(audio,self.orig_sr),self.orig_sr)
         if self.target_sr != self.orig_sr:
             audio = librosa.resample(audio, orig_sr=self.orig_sr, target_sr=self.target_sr)
         txt = self.text.sentence.iloc[idx]#[:-1] # remove "|"
@@ -73,6 +77,19 @@ def collate_fn(data,feature_extractor,tokenizer,pad_to_multiple_of,batch_size,Is
         attention_mask = np.concatenate([np.broadcast_to(mask_ids,(input_ids.shape[0],4)),attention_mask],1)
         if IsTPU:
             audio,input_ids,attention_mask = psplit(audio),psplit(input_ids),psplit(attention_mask)
+        return audio,input_ids,attention_mask
+    else:
+        return audio,txt
+
+def collate_fn_pt(data,feature_extractor,tokenizer,IsTrain):
+    # data: is a list of tuples with [(audio:1d Array,txt:List of text),...]
+    audio,txt = zip(*data)
+    audio = feature_extractor(audio,sampling_rate=16000,do_normalize=True,\
+                              max_length=max(a.shape[0] for a in audio),return_tensors='np',\
+                              return_attention_mask=False)['input_features']
+    if IsTrain:
+        txt = tokenizer.batch_encode_plus(txt,padding=True,return_attention_mask=True,return_tensors='np')
+        input_ids,attention_mask = txt['input_ids'], txt['attention_mask']
         return audio,input_ids,attention_mask
     else:
         return audio,txt
