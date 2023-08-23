@@ -8,6 +8,9 @@ from torch.utils.data import Dataset, DataLoader
 import jax
 import jax.numpy as jnp
 import torch
+import torch.nn as nn
+from transformers.modeling_outputs import BaseModelOutput
+
 # this is specific to whisper model
 device = 'cuda'
 pad_token_id = eos_token_id = 50257
@@ -81,15 +84,48 @@ def collate_fn(data,feature_extractor,tokenizer,pad_to_multiple_of,batch_size,Is
     else:
         return audio,txt
 
-def collate_fn_pt(data,feature_extractor,tokenizer,IsTrain):
+def collate_fn_pt(data,feature_extractor,tokenizer,IsTrain,IsWhisper=True):
     # data: is a list of tuples with [(audio:1d Array,txt:List of text),...]
     audio,txt = zip(*data)
-    audio = feature_extractor(audio,sampling_rate=16000,do_normalize=True,\
-                              max_length=max(a.shape[0] for a in audio),return_tensors='np',\
-                              return_attention_mask=False)['input_features']
+    if IsWhisper:
+        audio = feature_extractor(audio,sampling_rate=16000,do_normalize=True,\
+                            max_length=max(a.shape[0] for a in audio),return_tensors='np',\
+                            return_attention_mask=False)
+        audio = audio['input_features']
+    else:
+        audio = feature_extractor(audio,sampling_rate=16000,do_normalize=True,\
+                            max_length=max(a.shape[0] for a in audio),return_tensors='np',\
+                            return_attention_mask=False,padding=True)
+        audio = audio['input_values'] # wav2vec2
     if IsTrain:
         txt = tokenizer.batch_encode_plus(txt,padding=True,return_attention_mask=True,return_tensors='np')
         input_ids,attention_mask = txt['input_ids'], txt['attention_mask']
         return audio,input_ids,attention_mask
     else:
         return audio,txt
+
+
+
+class whisperEncoderWhead(torch.nn.Module):
+    def __init__(self, encoder,dim_in, dim_out,dropout=0.1):
+        super().__init__()
+        self.dropout = dropout
+        self.activation_fn = nn.GELU()
+        self.activation_dropout = dropout
+        self.same_shape = dim_in == dim_out
+        self.fc1 = nn.Linear(dim_in, dim_in*4)
+        self.fc2 = nn.Linear(dim_in*4, dim_out)
+        self.final_layer_norm = nn.LayerNorm(dim_in)
+        self.encoder = encoder
+
+    def forward(self,speech,*args,**kwargs):
+        hidden_states = self.encoder(speech)[0]
+        residual = hidden_states
+        hidden_states = self.final_layer_norm(hidden_states)
+        hidden_states = self.activation_fn(self.fc1(hidden_states))
+        hidden_states = nn.functional.dropout(hidden_states, p=self.activation_dropout, training=self.training)
+        hidden_states = self.fc2(hidden_states)
+        hidden_states = nn.functional.dropout(hidden_states, p=self.dropout, training=self.training)
+        # if self.same_shape:
+        #     hidden_states = residual + hidden_states
+        return BaseModelOutput(hidden_states)
