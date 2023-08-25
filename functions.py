@@ -104,7 +104,18 @@ def collate_fn_pt(data,feature_extractor,tokenizer,IsTrain,IsWhisper=True):
     else:
         return audio,txt
 
+def collate_fn_pt_wav2vec(data,feature_extractor,tokenizer):
+    # data: is a list of tuples with [(audio:1d Array,txt:List of text),...]
+    audio,txt = zip(*data)
+    audio = feature_extractor(audio,sampling_rate=16000,do_normalize=True,\
+                            max_length=max(a.shape[0] for a in audio),return_tensors='np',\
+                            return_attention_mask=True,padding=True)
+    audio,attention_mask = audio['input_values'],audio['attention_mask'] # wav2vec2
 
+    txt = tokenizer.batch_encode_plus(txt,padding=True,return_attention_mask=True,return_tensors='np')
+    input_ids,txt_mask = txt['input_ids'], txt['attention_mask']
+    input_ids = np.where(txt_mask,input_ids,-100)
+    return audio,input_ids,attention_mask
 
 class whisperEncoderWhead(torch.nn.Module):
     def __init__(self, encoder,dim_in, dim_out,dropout=0.1):
@@ -123,9 +134,9 @@ class whisperEncoderWhead(torch.nn.Module):
         residual = hidden_states
         hidden_states = self.final_layer_norm(hidden_states)
         hidden_states = self.activation_fn(self.fc1(hidden_states))
-        hidden_states = nn.functional.dropout(hidden_states, p=self.activation_dropout, training=self.training)
+        #hidden_states = nn.functional.dropout(hidden_states, p=self.activation_dropout, training=self.training)
         hidden_states = self.fc2(hidden_states)
-        hidden_states = nn.functional.dropout(hidden_states, p=self.dropout, training=self.training)
+        #hidden_states = nn.functional.dropout(hidden_states, p=self.dropout, training=self.training)
         # if self.same_shape:
         #     hidden_states = residual + hidden_states
         return BaseModelOutput(hidden_states)
