@@ -17,6 +17,8 @@ add_data_path = 'dlsprint/train.csv'
 add_audio = 'dlsprint/train_files/'
 add_data_path2 = 'text_train'
 add_audio2 = 'RESPIN/'
+add_data_path3 = '/home/zhenlan/Desktop/Projects/Bengali ASR/asr_bengali/utt_spk_text.tsv'
+add_audio3 = '/home/zhenlan/Desktop/Projects/Bengali ASR/asr_bengali/data/'
 #from whisper_jax import FlaxWhisperForConditionalGeneration
 from functions import *
 import torch.nn as nn
@@ -49,6 +51,9 @@ add_data = pd.read_csv(add_data_path)
 df = pd.read_csv(add_data_path2,names=['code'])
 df[['code','sentence']] = df["code"].str.split(" ", n=1, expand=True)
 df.sentence = df.sentence.str.strip()
+df4 = pd.read_csv(add_data_path3, sep='\t', header=None)
+df4.columns = ["audio_path", "__", "sentence"]
+df4 = df4.drop("__", axis=1)
 # "https://github.com/karoldvl/ESC-50/archive/master.zip"
 from audiomentations import (
     AddBackgroundNoise,
@@ -84,9 +89,12 @@ dataset2 = AudioDataset(add_data,add_audio,\
                         lambda x:x.path,augmentation,orig_sr=48000, target_sr=16000)
 dataset3 = AudioDataset(df,add_audio2,\
                         lambda x:x.code.split('_')[-1] + '.wav',augmentation,orig_sr=16000, target_sr=16000)
+dataset4 = AudioDataset(df4,add_audio3,\
+                        lambda x:x.audio_path + '.flac',orig_sr=16000, target_sr=16000)
                     
 dataset = Add2Data(dataset1,dataset2)
 dataset = Add2Data(dataset,dataset3)
+dataset = Add2Data(dataset,dataset4)
 train_loader = DataLoader(dataset, num_workers=num_workers, \
                             collate_fn=partial(collate_fn_pt_wav2vec,tokenizer=tokenizer,feature_extractor=feature_extractor),\
                             batch_sampler=DynamicBucketingBatchSampler(lengths))

@@ -86,21 +86,21 @@ class DynamicBucketingBatchSampler(object):
         else:
             return 2
 
-class TPUDynamicBucketingBatchSampler(DynamicBucketingBatchSampler):
-    def __init__(self, lengths, multiplier=8):
-        super().__init__(lengths, multiplier)
-        self.high -= 228
+# class TPUDynamicBucketingBatchSampler(DynamicBucketingBatchSampler):
+#     def __init__(self, lengths, multiplier=8):
+#         super().__init__(lengths, multiplier)
+#         self.high -= 228
     
-    @staticmethod
-    def len2batchsz(seq_len):
-        if seq_len < 57163:
-            return 20
-        elif seq_len < 101470:
-            return 12
-        elif seq_len < 221470:
-            return 4
-        else:
-            return 2
+#     @staticmethod
+#     def len2batchsz(seq_len):
+#         if seq_len < 57163:
+#             return 20
+#         elif seq_len < 101470:
+#             return 12
+#         elif seq_len < 221470:
+#             return 4
+#         else:
+#             return 2
 
 def get_len(audio_list,pad_to_multiple_of):
     # pad_to_multiple_of is applied in feature_extractor before FFT. But we want the output of FFT to be a multiple of.
@@ -154,18 +154,20 @@ def collate_fn_pt(data,feature_extractor,tokenizer,IsTrain,IsWhisper=True):
     else:
         return audio,txt
 
-def collate_fn_pt_wav2vec(data,feature_extractor,tokenizer):
+def collate_fn_pt_wav2vec(data,feature_extractor,tokenizer,IsTrain=True):
     # data: is a list of tuples with [(audio:1d Array,txt:List of text),...]
     audio,txt = zip(*data)
     audio = feature_extractor(audio,sampling_rate=16000,do_normalize=True,\
                             max_length=max(a.shape[0] for a in audio),return_tensors='np',\
                             return_attention_mask=True,padding=True)
     audio,attention_mask = audio['input_values'],audio['attention_mask'] # wav2vec2
-
-    txt = tokenizer.batch_encode_plus(txt,padding=True,return_attention_mask=True,return_tensors='np')
-    input_ids,txt_mask = txt['input_ids'], txt['attention_mask']
-    input_ids = np.where(txt_mask,input_ids,-100)
-    return audio,input_ids,attention_mask
+    if IsTrain:
+        txt = tokenizer.batch_encode_plus(txt,padding=True,return_attention_mask=True,return_tensors='np')
+        input_ids,txt_mask = txt['input_ids'], txt['attention_mask']
+        input_ids = np.where(txt_mask,input_ids,-100)
+        return audio,input_ids,attention_mask
+    else:
+        return audio,attention_mask,txt
 
 class whisperEncoderWhead(torch.nn.Module):
     def __init__(self, encoder,dim_in, dim_out,dropout=0.1):
