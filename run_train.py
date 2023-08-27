@@ -3,7 +3,7 @@ import jax
 FLATFORM = 'gcp'
 IsTPU = True
 dtype = jnp.bfloat16
-num_workers = 32
+num_workers = 16
 batch_size = 12 * 8
 speech_path = 'data/train_mp3s/'
 data_path = 'data/train.csv'
@@ -102,12 +102,12 @@ model.generation_config.bos_token_id = None
 # params['lm_head'] = {'kernel':params['model']['decoder']['embed_tokens']['embedding'].T,\
 #                      'bias'  :jnp.zeros(model.config.vocab_size,params['model']['decoder']['embed_tokens']['embedding'].dtype)}
 import pickle
-opt = optax.adamw(learning_rate=2e-5,
+opt = optax.adamw(learning_rate=1.5e-5,
                   b1=0.9,
                   b2=0.98,
                   eps=1e-6,
-                  weight_decay=1e-2,)#1e-1
-opt = optax.chain(optax.clip_by_global_norm(4e-3),opt)
+                  weight_decay=1e-3,)#1e-1
+opt = optax.chain(optax.clip_by_global_norm(1e-3),opt)
 # opt_states = opt.init(params)
 filehandler = open(output_path+"opt_states","rb")
 opt_states = pickle.load(filehandler)
@@ -164,7 +164,7 @@ def main():
                 train_loss /= verbose
                 logging.info(f"iterations:{j}, loss: {train_loss:.3f}")
                 train_loss = 0
-                if j%50 ==0:
+                if j%30 ==0:
                     model.save_pretrained(output_path+'model_all',jax.tree_map(lambda x: x[0], replicated_params))
                     filehandler = open(output_path+"opt_states","wb")
                     pickle.dump(jax.tree_map(lambda x: x[0], replicated_opt_states),filehandler)

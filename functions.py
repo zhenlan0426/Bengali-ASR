@@ -10,6 +10,7 @@ import jax.numpy as jnp
 import torch
 import torch.nn as nn
 from transformers.modeling_outputs import BaseModelOutput
+from bnunicodenormalizer import Normalizer
 
 # this is specific to whisper model
 device = 'cuda'
@@ -17,6 +18,11 @@ pad_token_id = eos_token_id = 50257
 bos_ids = np.array([[50258, 50302, 50359, 50363]]) # '<|startoftranscript|><|bn|><|transcribe|><|notimestamps|>
 mask_ids = np.ones((1,4),dtype=np.int64)
 # data sr and required sr for model
+
+bnorm = Normalizer()
+def normalize(sen):
+    _words = [bnorm(word)['normalized']  for word in sen.split()]
+    return " ".join([word for word in _words if word is not None])
 
 class AudioDataset(Dataset):
     def __init__(self, text,speech_path,get_map_fn,augmentation=None,orig_sr=32000, target_sr=16000):
@@ -36,7 +42,9 @@ class AudioDataset(Dataset):
         if self.target_sr != self.orig_sr:
             audio = librosa.resample(audio, orig_sr=self.orig_sr, target_sr=self.target_sr)
         txt = self.text.sentence.iloc[idx]#[:-1] # remove "|"
-        return audio,txt
+        if txt[-1]=="|":
+            txt = txt[:-1]
+        return audio,normalize(txt)
 
 class Add2Data(Dataset):
     def __init__(self, data1,data2):
@@ -51,6 +59,48 @@ class Add2Data(Dataset):
             return self.data1[idx]
         else:
             return self.data2[idx-l1]
+        
+class DynamicBucketingBatchSampler(object):
+    def __init__(self, lengths, multiplier=1):       
+        self.lengths = lengths
+        self.high = len(lengths) - 33
+        self.sorted_indices = list(range(len(self.lengths)))
+        self.sorted_indices.sort(key=lambda x: self.lengths[x])
+        self.multiplier = multiplier
+
+    def __iter__(self):
+        while True:
+            idx = np.random.randint(0,self.high)
+            seq_len = self.lengths[self.sorted_indices[idx]]
+            batch_size = self.len2batchsz(seq_len)
+            yield self.sorted_indices[idx:idx+batch_size*self.multiplier]
+
+    @staticmethod
+    def len2batchsz(seq_len):
+        if seq_len < 47163:
+            return 32
+        elif seq_len < 81470:
+            return 16
+        elif seq_len < 221470:
+            return 4
+        else:
+            return 2
+
+class TPUDynamicBucketingBatchSampler(DynamicBucketingBatchSampler):
+    def __init__(self, lengths, multiplier=8):
+        super().__init__(lengths, multiplier)
+        self.high -= 228
+    
+    @staticmethod
+    def len2batchsz(seq_len):
+        if seq_len < 57163:
+            return 20
+        elif seq_len < 101470:
+            return 12
+        elif seq_len < 221470:
+            return 4
+        else:
+            return 2
 
 def get_len(audio_list,pad_to_multiple_of):
     # pad_to_multiple_of is applied in feature_extractor before FFT. But we want the output of FFT to be a multiple of.
@@ -61,7 +111,7 @@ def get_len(audio_list,pad_to_multiple_of):
 
 def collate_fn(data,feature_extractor,tokenizer,pad_to_multiple_of,batch_size,IsTrain,IsTPU):
     # data: is a list of tuples with [(audio:1d Array,txt:List of text),...]
-    psplit = lambda x: x.reshape(8,batch_size//8,*x.shape[1:])
+    psplit = lambda x: x.reshape(8,-1,*x.shape[1:])
     audio,txt = zip(*data)
     audio = feature_extractor(audio,sampling_rate=16000,do_normalize=True,\
                               max_length=get_len(audio,pad_to_multiple_of),return_tensors='np',\
