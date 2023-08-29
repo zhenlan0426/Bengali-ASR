@@ -17,7 +17,7 @@ add_data_path = 'dlsprint/train.csv'
 add_audio = 'dlsprint/train_files/'
 add_data_path2 = 'text_train'
 add_audio2 = 'RESPIN/'
-add_data_path3 = '/home/zhenlan/Desktop/Projects/Bengali ASR/asr_bengali/utt_spk_text.tsv'
+add_data_path3 = '/home/zhenlan/Desktop/Projects/Bengali ASR/asr_bengali/utt_spk_text_cleaned.tsv'
 add_audio3 = '/home/zhenlan/Desktop/Projects/Bengali ASR/asr_bengali/data/'
 #from whisper_jax import FlaxWhisperForConditionalGeneration
 from functions import *
@@ -51,9 +51,8 @@ add_data = pd.read_csv(add_data_path)
 df = pd.read_csv(add_data_path2,names=['code'])
 df[['code','sentence']] = df["code"].str.split(" ", n=1, expand=True)
 df.sentence = df.sentence.str.strip()
-df4 = pd.read_csv(add_data_path3, sep='\t', header=None)
-df4.columns = ["audio_path", "__", "sentence"]
-df4 = df4.drop("__", axis=1)
+df4 = pd.read_csv(add_data_path3, sep='\t')
+
 # "https://github.com/karoldvl/ESC-50/archive/master.zip"
 from audiomentations import (
     AddBackgroundNoise,
@@ -90,7 +89,7 @@ dataset2 = AudioDataset(add_data,add_audio,\
 dataset3 = AudioDataset(df,add_audio2,\
                         lambda x:x.code.split('_')[-1] + '.wav',augmentation,orig_sr=16000, target_sr=16000)
 dataset4 = AudioDataset(df4,add_audio3,\
-                        lambda x:x.audio_path + '.flac',orig_sr=16000, target_sr=16000)
+                        lambda x:x.filename + '.flac',orig_sr=16000, target_sr=16000)
                     
 dataset = Add2Data(dataset1,dataset2)
 dataset = Add2Data(dataset,dataset3)
@@ -149,7 +148,7 @@ def main():
             logging.info(f"iterations:{j}, loss: {train_loss:.3f}")
             train_loss = 0
             skip = 0
-        if j%500==0:
+        if j%1000==0:
             torch.save(model, model_path)
 
 if __name__ == "__main__":
