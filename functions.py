@@ -25,24 +25,26 @@ def normalize(sen):
     return " ".join([word for word in _words if word is not None])
 
 class AudioDataset(Dataset):
-    def __init__(self, text,speech_path,get_map_fn,augmentation=None,orig_sr=32000, target_sr=16000):
+    def __init__(self, text,speech_path,get_map_fn,augmentation=None,orig_sr=32000, target_sr=16000,mono=True):
         self.text = text
         self.speech_path = speech_path
         self.augmentation = augmentation
         self.orig_sr = orig_sr
         self.target_sr = target_sr
         self.get_map_fn = get_map_fn
+        self.mono = mono
+
     def __len__(self):
         return self.text.shape[0]
     def __getitem__(self,idx):
-        audio = librosa.load(self.speech_path+self.get_map_fn(self.text.iloc[idx]))[0]
+        audio = librosa.load(self.speech_path+self.get_map_fn(self.text.iloc[idx]),mono=self.mono)[0]
         if self.augmentation:
             rev = Reverb(room_size=np.random.rand()*0.5)
             audio = self.augmentation(rev(audio,self.orig_sr),self.orig_sr)
         if self.target_sr != self.orig_sr:
             audio = librosa.resample(audio, orig_sr=self.orig_sr, target_sr=self.target_sr)
         txt = self.text.sentence.iloc[idx]#[:-1] # remove "|"
-        if txt[-1]=="|":
+        if txt[-1]=="।":
             txt = txt[:-1]
         return audio,normalize(txt)
 
@@ -78,9 +80,9 @@ class DynamicBucketingBatchSampler(object):
     @staticmethod
     def len2batchsz(seq_len):
         if seq_len < 47163:
-            return 32
+            return 24
         elif seq_len < 81470:
-            return 16
+            return 12
         elif seq_len < 221470:
             return 4
         else:
@@ -165,6 +167,8 @@ def collate_fn_pt_wav2vec(data,feature_extractor,tokenizer,IsTrain=True):
         txt = tokenizer.batch_encode_plus(txt,padding=True,return_attention_mask=True,return_tensors='np')
         input_ids,txt_mask = txt['input_ids'], txt['attention_mask']
         input_ids = np.where(txt_mask,input_ids,-100)
+        # if input_ids.shape[1]==0:
+        #     raise
         return audio,input_ids,attention_mask
     else:
         return audio,attention_mask,txt
