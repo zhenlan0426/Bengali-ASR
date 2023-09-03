@@ -136,6 +136,26 @@ def collate_fn(data,feature_extractor,tokenizer,pad_to_multiple_of,batch_size,Is
     else:
         return audio,txt
 
+class TxtData(Dataset):
+    def __init__(self, lines):
+        self.lines = lines
+    def __len__(self):
+        return len(self.lines)
+    def __getitem__(self,idx):
+        return self.lines[idx]
+    
+def collate_fn_txt(txt,tokenizer,pad_to_multiple_of):
+    psplit = lambda x: x.reshape(8,-1,*x.shape[1:])
+    txt = tokenizer.batch_encode_plus(txt,padding=True,return_attention_mask=True,pad_to_multiple_of=pad_to_multiple_of,return_tensors='np')
+    input_ids,attention_mask = txt['input_ids'], txt['attention_mask']
+    # pad/eos is based on tokenizer but not consistent with model
+    pad_idx = np.where(input_ids==tokenizer.pad_token_id)
+    eos_idx = np.where(input_ids==tokenizer.eos_token_id)
+    input_ids[pad_idx] = pad_token_id
+    input_ids[eos_idx] = eos_token_id
+    input_ids,attention_mask = psplit(input_ids),psplit(attention_mask)
+    return input_ids,attention_mask
+
 def collate_fn_pt(data,feature_extractor,tokenizer,IsTrain,IsWhisper=True):
     # data: is a list of tuples with [(audio:1d Array,txt:List of text),...]
     audio,txt = zip(*data)
